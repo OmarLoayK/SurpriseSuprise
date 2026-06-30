@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>A question for you</title>
+
+<!-- ============================================================= -->
+<!--  EDIT ME:  the only things you'll usually need to change are   -->
+<!--  in the CONFIG object inside the <script> near the bottom,     -->
+<!--  OR pass names in the link:  index.html?to=Sara&from=Omar      -->
+<!-- ============================================================= -->
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+
+<style>
+  :root{
+    --bg:        #0a0710;   /* near-black, warmed toward violet */
+    --bg-panel:  #15101e;
+    --rose:      #ff5d8f;   /* primary particle / accent */
+    --rose-soft: #ff9ec4;
+    --gold:      #ffd479;   /* the single warm highlight — used only on the "yes" path */
+    --ink:       #f4ecf2;   /* warm off-white text */
+    --muted:     #9a8fa6;
+    --line:      rgba(255,255,255,.10);
+  }
+
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; }
+  body{
+    margin:0;
+    background:
+      radial-gradient(120% 90% at 50% 38%, rgba(255,93,143,.10), transparent 60%),
+      var(--bg);
+    color:var(--ink);
+    font-family:Inter, system-ui, -apple-system, sans-serif;
+    overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+
+  /* particle heart lives here, behind everything */
+  #bg-canvas{ position:fixed; inset:0; width:100%; height:100%; display:block; z-index:0; }
+  .vignette{ position:fixed; inset:0; z-index:1; pointer-events:none;
+    box-shadow: inset 0 0 220px 60px rgba(5,3,9,.9); }
+
+  /* stage overlays */
+  .stage{
+    position:fixed; inset:0; z-index:2;
+    display:flex; flex-direction:column; align-items:center; justify-content:flex-end;
+    padding: 0 24px clamp(40px, 9vh, 96px);
+    text-align:center;
+    opacity:0; transform:translateY(14px); pointer-events:none;
+    transition:opacity .7s ease, transform .7s ease;
+  }
+  .stage.active{ opacity:1; transform:none; pointer-events:auto; }
+
+  .eyebrow{
+    font-size:.78rem; letter-spacing:.32em; text-transform:uppercase;
+    color:var(--rose-soft); margin:0 0 18px; font-weight:500;
+  }
+  h1{
+    font-family:Fraunces, Georgia, serif;
+    font-weight:500; font-optical-sizing:auto;
+    font-size:clamp(2.3rem, 8vw, 4.6rem);
+    line-height:1.02; margin:0 0 10px; letter-spacing:-.01em;
+    text-shadow:0 6px 40px rgba(255,93,143,.35);
+  }
+  .sub{ color:var(--muted); font-size:clamp(1rem,3.4vw,1.18rem); margin:0 0 34px; max-width:30ch; }
+
+  /* buttons */
+  .btn{
+    font-family:Inter, sans-serif; font-weight:600; font-size:1.05rem;
+    border:none; border-radius:999px; cursor:pointer; color:#fff;
+    padding:16px 34px; letter-spacing:.01em;
+    transition:transform .18s ease, box-shadow .25s ease, background .2s ease;
+  }
+  .btn:focus-visible{ outline:3px solid var(--gold); outline-offset:3px; }
+  .btn-yes{
+    background:linear-gradient(135deg, var(--rose), #ff7aa8);
+    box-shadow:0 10px 34px rgba(255,93,143,.45), 0 0 0 1px rgba(255,255,255,.08) inset;
+  }
+  .btn-yes:hover{ transform:translateY(-2px) scale(1.03); box-shadow:0 16px 46px rgba(255,93,143,.6); }
+  .btn-no{
+    background:rgba(255,255,255,.06);
+    color:var(--muted);
+    border:1px solid var(--line);
+    backdrop-filter:blur(4px);
+  }
+  .btn-ghost{
+    background:transparent; color:var(--ink);
+    border:1px solid var(--line); font-weight:500;
+  }
+  .btn-ghost:hover{ border-color:var(--rose-soft); color:var(--rose-soft); }
+
+  .ask-buttons{ display:flex; gap:18px; align-items:center; flex-wrap:wrap; justify-content:center; }
+  /* the No button roams the whole screen once it starts dodging */
+  #no.loose{ position:fixed; z-index:5; margin:0; }
+
+  /* date / yes stage */
+  .panel{
+    width:min(440px, 100%);
+    background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.015));
+    border:1px solid var(--line); border-radius:22px;
+    padding:26px 24px; backdrop-filter:blur(10px);
+    box-shadow:0 24px 70px rgba(0,0,0,.45);
+    text-align:left;
+  }
+  .field{ margin:0 0 16px; }
+  .field label{ display:block; font-size:.82rem; color:var(--muted); margin:0 0 7px; letter-spacing:.02em; }
+  .field input{
+    width:100%; padding:13px 14px; border-radius:12px;
+    background:rgba(0,0,0,.28); border:1px solid var(--line);
+    color:var(--ink); font-family:Inter,sans-serif; font-size:1rem;
+    color-scheme:dark;
+  }
+  .field input:focus{ outline:none; border-color:var(--rose); box-shadow:0 0 0 3px rgba(255,93,143,.22); }
+  .row{ display:flex; gap:12px; }
+  .row .field{ flex:1; }
+
+  .cta-cal{
+    width:100%; margin-top:6px;
+    background:linear-gradient(135deg, var(--gold), #ffc24d);
+    color:#3a2a07; font-weight:600; padding:15px;
+    box-shadow:0 12px 34px rgba(255,212,121,.32);
+  }
+  .cta-cal:hover{ transform:translateY(-2px); box-shadow:0 18px 44px rgba(255,212,121,.5); }
+  .cta-cal[disabled]{ filter:grayscale(.6) brightness(.8); cursor:not-allowed; transform:none; box-shadow:none; }
+  .ics-link{
+    display:inline-block; margin-top:14px; color:var(--muted);
+    font-size:.88rem; text-decoration:none; border-bottom:1px dashed var(--line);
+  }
+  .ics-link:hover{ color:var(--rose-soft); }
+  .hint{ font-size:.8rem; color:var(--muted); margin:10px 2px 0; min-height:1.1em; }
+  .hint.err{ color:#ff8da0; }
+
+  .yes-title{ display:flex; align-items:center; gap:.4em; justify-content:center; }
+
+  /* confetti pieces */
+  .confetti{ position:fixed; top:-20px; z-index:4; pointer-events:none; will-change:transform; font-size:20px; }
+
+  /* the growing flower */
+  .flower-wrap{
+    position:fixed; left:50%; bottom:0; transform:translateX(-50%);
+    width:min(58vw,420px); height:min(78vh,600px); z-index:2;
+    pointer-events:none; display:flex; align-items:flex-end; justify-content:center;
+  }
+  .flower{
+    width:100%; height:100%; overflow:visible; opacity:0; visibility:hidden;
+    filter:drop-shadow(0 0 24px rgba(255,93,143,.45)) drop-shadow(0 10px 34px rgba(0,0,0,.45));
+  }
+  .stem{ fill:none; stroke:#4f9e78; stroke-width:9; stroke-linecap:round; stroke-dasharray:100; }
+  .leaf{ fill:#54a37c; }
+  .bud-stem{ fill:none; stroke:#4f9e78; stroke-width:5; stroke-linecap:round; stroke-dasharray:100; }
+  .flower-glow{
+    position:absolute; left:50%; top:30%; width:56%; aspect-ratio:1/1;
+    transform:translate(-50%,-50%);
+    background:radial-gradient(circle, rgba(255,93,143,.55), rgba(255,158,196,.18) 45%, rgba(255,93,143,0) 70%);
+    filter:blur(6px); opacity:0; pointer-events:none;
+  }
+  .whisper{
+    position:fixed; left:0; right:0; top:28%; z-index:3; text-align:center; pointer-events:none;
+    font-family:Fraunces, Georgia, serif; font-weight:500;
+    font-size:clamp(1.3rem,5vw,2.1rem); color:var(--rose-soft); opacity:0;
+    text-shadow:0 4px 32px rgba(255,93,143,.55);
+  }
+  .skip{
+    position:fixed; right:18px; bottom:18px; z-index:6; opacity:0; visibility:hidden;
+    font-size:.85rem; color:var(--muted); cursor:pointer; user-select:none;
+    background:rgba(255,255,255,.05); border:1px solid var(--line);
+    border-radius:999px; padding:8px 16px; transition:color .2s ease;
+  }
+  .skip:hover{ color:var(--ink); }
+
+  @media (max-width:560px){
+    .stage{ justify-content:center; }
+  }
+  @media (prefers-reduced-motion: reduce){
+    .stage{ transition:opacity .3s ease; transform:none; }
+    .btn{ transition:none; }
+  }
+</style>
+</head>
+<body>
+  <canvas id="bg-canvas"></canvas>
+  <div class="vignette"></div>
+
+  <!-- the flower that grows from the bottom -->
+  <div class="flower-wrap">
+    <div class="flower-glow"></div>
+    <svg class="flower" id="flower" viewBox="0 0 300 560" preserveAspectRatio="xMidYMax meet" aria-hidden="true">
+      <defs>
+        <radialGradient id="petalGrad" cx="50%" cy="45%" r="62%">
+          <stop offset="0%"   stop-color="#ffd0e0"/>
+          <stop offset="55%"  stop-color="#ff7aa6"/>
+          <stop offset="100%" stop-color="#ff4d86"/>
+        </radialGradient>
+        <radialGradient id="budGrad" cx="50%" cy="45%" r="60%">
+          <stop offset="0%" stop-color="#ffd9e6"/>
+          <stop offset="100%" stop-color="#ff6f9e"/>
+        </radialGradient>
+      </defs>
+      <!-- side buds (behind the main flower) -->
+      <path class="bud-stem" d="M150,372 C120,366 96,344 80,308" pathLength="100"/>
+      <path class="bud-stem" d="M150,312 C184,306 210,286 222,256" pathLength="100"/>
+      <g id="bud-l"></g>
+      <g id="bud-r"></g>
+      <circle class="bud-center bud-center-l" cx="80"  cy="302" r="6" fill="#ffd479"/>
+      <circle class="bud-center bud-center-r" cx="222" cy="254" r="6" fill="#ffd479"/>
+      <!-- main flower -->
+      <path class="stem" d="M150,556 C146,470 168,402 152,330 C140,272 156,224 150,176" pathLength="100"/>
+      <path class="leaf leaf-left"  d="M152,356 C112,352 92,322 110,300 C140,312 154,334 152,356 Z"/>
+      <path class="leaf leaf-right" d="M150,300 C190,296 210,266 192,244 C162,256 148,278 150,300 Z"/>
+      <g id="petals"></g>
+      <circle class="flower-center" cx="150" cy="150" r="17" fill="#ffd479"/>
+      <circle class="flower-center" cx="150" cy="150" r="8"  fill="#ffb347"/>
+    </svg>
+  </div>
+  <div class="whisper" id="whisper"></div>
+  <div class="skip" id="skip">skip ▸</div>
+
+  <!-- STAGE 1 — intro -->
+  <section class="stage active" id="intro">
+    <p class="eyebrow" id="intro-eyebrow">Hey you</p>
+    <h1>I made this<br>just for you.</h1>
+    <p class="sub">There's something I want to grow for you. Tap to begin.</p>
+    <button class="btn btn-yes" id="open-btn">Begin &nbsp;→</button>
+  </section>
+
+  <!-- STAGE 2 — the question -->
+  <section class="stage" id="ask">
+    <p class="eyebrow">A serious question</p>
+    <h1 id="question">Will you go out with me?</h1>
+    <div class="ask-buttons">
+      <button class="btn btn-yes" id="yes">Yes 💖</button>
+      <button class="btn btn-no" id="no">No</button>
+    </div>
+  </section>
+
+  <!-- STAGE 3 — she said yes -->
+  <section class="stage" id="done">
+    <p class="eyebrow" style="color:var(--gold)">It's a date</p>
+    <h1 class="yes-title">Yes! <span>🎉</span></h1>
+    <p class="sub" id="done-sub">You just made my whole year. Now let's lock in the time.</p>
+    <div class="panel">
+      <div class="row">
+        <div class="field">
+          <label for="date">Day</label>
+          <input type="date" id="date" />
+        </div>
+        <div class="field">
+          <label for="time">Time</label>
+          <input type="time" id="time" />
+        </div>
+      </div>
+      <div class="field">
+        <label for="place">Where (optional)</label>
+        <input type="text" id="place" placeholder="I'll figure it out — surprise!" />
+      </div>
+      <button class="btn cta-cal" id="add-cal" disabled>Add to Google Calendar</button>
+      <p class="hint" id="hint">Pick a day and time to enable the button.</p>
+      <a href="#" class="ics-link" id="ics-link" hidden>Or save to Apple / Outlook (.ics)</a>
+    </div>
+  </section>
+
+  <!-- libraries (work on GitHub Pages and offline-CDN) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+
+  <script>
+  /* =================================================================
+     CONFIG  —  change these, or pass ?to=Name&from=Name in the URL
+     ================================================================= */
+  const params = new URLSearchParams(location.search);
+  const CONFIG = {
+    to:            params.get('to')   || 'you',        // her name
+    from:          params.get('from') || 'me',         // your name
+    question:      'Will you go out with me?',
+    eventTitle:    '',          // leave '' to auto-build "Date with <from> 💖"
+    durationHours: 2,
+  };
+
+  // personalize the visible copy
+  if (CONFIG.to !== 'you'){
+    document.getElementById('intro-eyebrow').textContent = 'Hey ' + CONFIG.to;
+  }
+  document.getElementById('question').textContent = CONFIG.question;
+
+  /* =================================================================
+     1) THE PARTICLE HEART  (Three.js + GSAP)
+        Points are sampled along a heart curve and scattered out from
+        the center — the same idea as the reel in your screenshot.
+     ================================================================= */
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const canvas = document.getElementById('bg-canvas');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  const scene  = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 1000);
+  const group  = new THREE.Group();
+  scene.add(group);
+
+  // heart outline:  x = 16 sin³t ,  y = 13cos t − 5cos2t − 2cos3t − cos4t
+  const heartPoint = (t) => ({
+    x: 16 * Math.pow(Math.sin(t), 3),
+    y: 13*Math.cos(t) - 5*Math.cos(2*t) - 2*Math.cos(3*t) - Math.cos(4*t)
+  });
+
+  const STEPS = 1400, PER_STEP = 4;            // ~5600 particles
+  const COUNT = STEPS * PER_STEP;
+  const positions = new Float32Array(COUNT * 3); // current (animated)
+  const target    = new Float32Array(COUNT * 3); // final heart position
+  const colors     = new Float32Array(COUNT * 3);
+  const delay      = new Float32Array(COUNT);     // staggered formation
+  const phase      = new Float32Array(COUNT);     // per-particle shimmer
+
+  let i = 0;
+  const c1 = new THREE.Color('#ff5d8f');
+  const c2 = new THREE.Color('#ffb3d1');
+  for (let s = 0; s < STEPS; s++){
+    const t = (s / STEPS) * Math.PI * 2;
+    const p = heartPoint(t);
+    for (let k = 0; k < PER_STEP; k++){
+      const tx = p.x + (Math.random()-0.5) * 1.6;          // fuzzy band
+      const ty = p.y + (Math.random()-0.5) * 1.6;
+      const tz = (Math.random()-0.5) * 3.2;                // depth, like the reel's z jitter
+      target[i*3]   = tx; target[i*3+1] = ty; target[i*3+2] = tz;
+      // start scattered near the center
+      positions[i*3]   = (Math.random()-0.5) * 2;
+      positions[i*3+1] = (Math.random()-0.5) * 2;
+      positions[i*3+2] = (Math.random()-0.5) * 2;
+      const col = c1.clone().lerp(c2, Math.random()*0.7);
+      colors[i*3] = col.r; colors[i*3+1] = col.g; colors[i*3+2] = col.b;
+      delay[i] = Math.random() * 0.55;
+      phase[i] = Math.random() * Math.PI * 2;
+      i++;
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('color',    new THREE.BufferAttribute(colors, 3));
+
+  // soft round sprite so points glow instead of looking like squares
+  const sprite = (() => {
+    const cv = document.createElement('canvas'); cv.width = cv.height = 64;
+    const g = cv.getContext('2d');
+    const grd = g.createRadialGradient(32,32,0, 32,32,32);
+    grd.addColorStop(0,   'rgba(255,255,255,1)');
+    grd.addColorStop(0.3, 'rgba(255,200,225,.9)');
+    grd.addColorStop(1,   'rgba(255,93,143,0)');
+    g.fillStyle = grd; g.beginPath(); g.arc(32,32,32,0,Math.PI*2); g.fill();
+    const tx = new THREE.Texture(cv); tx.needsUpdate = true; return tx;
+  })();
+
+  const material = new THREE.PointsMaterial({
+    size: 0.5, map: sprite, vertexColors: true,
+    transparent: true, opacity: 0, depthWrite: false,
+    blending: THREE.AdditiveBlending, sizeAttenuation: true,
+  });
+  const points = new THREE.Points(geo, material);
+  group.add(points);
+
+  // fit the heart on screen on any aspect ratio
+  function fit(){
+    const w = innerWidth, h = innerHeight, a = w / h;
+    renderer.setSize(w, h);
+    camera.aspect = a; camera.updateProjectionMatrix();
+    const halfFov = (55 * Math.PI/180) / 2;
+    const distForH = 16 / Math.tan(halfFov);          // half-height of heart ≈ 16
+    const distForW = 18 / (Math.tan(halfFov) * a);    // half-width ≈ 18
+    camera.position.z = Math.max(distForH, distForW) * 1.18;
+    camera.position.y = 1.5;
+    camera.lookAt(0, 1.5, 0);
+  }
+  addEventListener('resize', fit); fit();
+
+  const state = { form: 0, bloom: 0, heartOpacity: 0.95 };
+  const smooth = x => x*x*(3 - 2*x);
+  const clamp01 = x => x < 0 ? 0 : x > 1 ? 1 : x;
+  const tmp = new THREE.Vector3();
+
+  function render(now){
+    const time = now * 0.001;
+    const pos = geo.attributes.position.array;
+    for (let n = 0; n < COUNT; n++){
+      const d = delay[n];
+      const local = smooth(clamp01((state.form - d) / (1 - d)));
+      const breathe = 1 + 0.018 * Math.sin(time * 1.6 + phase[n]);
+      let tx = target[n*3]   * breathe;
+      let ty = target[n*3+1] * breathe;
+      let tz = target[n*3+2];
+      if (state.bloom > 0){                  // the "Yes" burst
+        const b = state.bloom * 9;
+        tx += target[n*3]   * 0.05 * b;
+        ty += target[n*3+1] * 0.05 * b;
+        tz += Math.sin(phase[n]) * b;
+      }
+      pos[n*3]   = THREE.MathUtils.lerp(positions[n*3],   tx, local);
+      pos[n*3+1] = THREE.MathUtils.lerp(positions[n*3+1], ty, local);
+      pos[n*3+2] = THREE.MathUtils.lerp(positions[n*3+2], tz, local);
+    }
+    geo.attributes.position.needsUpdate = true;
+    if (!reduceMotion) group.rotation.y = Math.sin(time * 0.35) * 0.22;
+    renderer.render(scene, camera);
+    requestAnimationFrame(render);
+  }
+  requestAnimationFrame(render);
+
+  /* =================================================================
+     2) STAGE FLOW
+     ================================================================= */
+  const show = id => {
+    document.querySelectorAll('.stage').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+  };
+  /* ---- the flower bloom + opening sequence ---- */
+  const flowerEl  = document.getElementById('flower');
+  const whisperEl = document.getElementById('whisper');
+  const skipEl    = document.getElementById('skip');
+  const SVGNS = 'http://www.w3.org/2000/svg';
+
+  // a single petal path: base at (cx,cy), tip pushed out by angle
+  function petalPath(cx, cy, ang, L, W){
+    const a = ang * Math.PI/180, ca = Math.cos(a), sa = Math.sin(a);
+    const pts = [[0,0],[-W,-0.3*L],[-0.7*W,-0.85*L],[0,-L],[0.7*W,-0.85*L],[W,-0.3*L],[0,0]];
+    const f = ([x,y]) => { const rx = x*ca - y*sa, ry = x*sa + y*ca; return (cx+rx).toFixed(1)+','+(cy+ry).toFixed(1); };
+    return `M${f(pts[0])} C${f(pts[1])} ${f(pts[2])} ${f(pts[3])} C${f(pts[4])} ${f(pts[5])} ${f(pts[6])} Z`;
+  }
+  function fillPetals(parent, cx, cy, n, L, W, off, fill, cls){
+    for (let k = 0; k < n; k++){
+      const el = document.createElementNS(SVGNS, 'path');
+      el.setAttribute('d', petalPath(cx, cy, off + k*(360/n), L, W));
+      el.setAttribute('fill', fill);
+      el.setAttribute('class', cls);
+      parent.appendChild(el);
+    }
+  }
+  const petalsG = document.getElementById('petals');
+  // a fuller, layered bloom: three rings
+  fillPetals(petalsG, 150, 150, 10, 90, 32, 0,  'url(#petalGrad)', 'petal petal-outer');
+  fillPetals(petalsG, 150, 150,  8, 64, 26, 18, 'url(#petalGrad)', 'petal petal-mid');
+  fillPetals(petalsG, 150, 150,  6, 42, 20, 30, '#ffc6da',         'petal petal-inner');
+  // two little side buds
+  fillPetals(document.getElementById('bud-l'), 80,  302, 5, 26, 11, 0, 'url(#budGrad)', 'bud bud-l-petal');
+  fillPetals(document.getElementById('bud-r'), 222, 254, 5, 26, 11, 0, 'url(#budGrad)', 'bud bud-r-petal');
+
+  // everything starts closed, scaling open from its own pivot
+  gsap.set('.petal, .flower-center', { svgOrigin:'150 150', scale:0 });
+  gsap.set('.bud-l-petal, .bud-center-l', { svgOrigin:'80 302',  scale:0 });
+  gsap.set('.bud-r-petal, .bud-center-r', { svgOrigin:'222 254', scale:0 });
+  gsap.set('.leaf-left',  { svgOrigin:'152 356', scale:0 });
+  gsap.set('.leaf-right', { svgOrigin:'150 300', scale:0 });
+
+  whisperEl.textContent = (CONFIG.to === 'you') ? 'just for you\u2026' : CONFIG.to + '\u2026';
+
+  // soft drifting sparkles around the flower
+  function sparkle(count){
+    for (let k = 0; k < count; k++){
+      const c = document.createElementNS(SVGNS, 'circle');
+      c.setAttribute('cx', 150 + (Math.random()-0.5)*170);
+      c.setAttribute('cy', 170 + (Math.random()-0.5)*120);
+      c.setAttribute('r', (1 + Math.random()*2.4).toFixed(1));
+      c.setAttribute('fill', Math.random() < 0.5 ? '#ffd479' : '#ffd7e6');
+      c.setAttribute('opacity', '0');
+      flowerEl.appendChild(c);
+      gsap.to(c, { opacity:0.9, duration:0.4, delay:Math.random()*0.5, onComplete(){
+        gsap.to(c, { y:-70 - Math.random()*110, x:(Math.random()-0.5)*70, opacity:0,
+          duration:2 + Math.random()*1.4, ease:'power1.out', onComplete:()=>c.remove() });
+      }});
+    }
+  }
+
+  let ambientTimer = null, glowTween = null, swayTween = null;
+  function startAmbient(){
+    sparkle(10);
+    ambientTimer = setInterval(() => sparkle(5), 850);
+    glowTween = gsap.to('.flower-glow', { opacity:0.85, duration:2.6, ease:'sine.inOut', yoyo:true, repeat:-1 });
+    swayTween = gsap.to(flowerEl, { rotation:2.2, duration:3.6, ease:'sine.inOut',
+                                    yoyo:true, repeat:-1, transformOrigin:'50% 100%' });
+  }
+
+  let started = false, finished = false;
+  function finale(){                       // settle into the question (also the skip target)
+    if (finished) return; finished = true;
+    if (ambientTimer) clearInterval(ambientTimer);
+    if (glowTween) glowTween.kill();
+    gsap.to(skipEl, { autoAlpha:0, duration:0.3 });
+    gsap.set('.stem, .bud-stem', { strokeDashoffset:0 });
+    gsap.set('.leaf, .petal, .flower-center, .bud, .bud-center', { scale:1 });
+    gsap.to(whisperEl, { opacity:0, duration:0.4 });
+    gsap.to(material, { opacity:state.heartOpacity, duration:0.6 });
+    gsap.to(state, { form:1, duration:0.9, ease:'power2.out' });
+    gsap.to(group.position, { y:0, duration:1.3, ease:'power2.inOut' });
+    gsap.to(flowerEl, { scale:0.6, yPercent:14, opacity:0.5, transformOrigin:'50% 100%',
+                        duration:1.3, ease:'power2.inOut' });
+    gsap.to('.flower-glow', { opacity:0.28, duration:1.3 });
+    show('ask');
+  }
+
+  function beginSequence(){
+    if (started) return; started = true;
+    document.getElementById('intro').classList.remove('active');
+    gsap.set(flowerEl, { autoAlpha:1 });
+
+    if (reduceMotion){
+      gsap.set('.stem, .bud-stem', { strokeDashoffset:0 });
+      gsap.set('.leaf, .petal, .flower-center, .bud, .bud-center', { scale:1 });
+      gsap.set('.flower-glow', { opacity:0.45 });
+      material.opacity = state.heartOpacity; state.form = 1;
+      setTimeout(() => show('ask'), 600);
+      return;
+    }
+
+    // let her bail out after a few seconds if she wants
+    gsap.to(skipEl, { autoAlpha:1, duration:0.5, delay:3 });
+    skipEl.addEventListener('click', finale, { once:true });
+
+    gsap.set(group.position, { y:4.6 });        // heart waits up high, above the flower
+    const tl = gsap.timeline();
+    // stems draw upward
+    tl.fromTo('.stem', { strokeDashoffset:100 }, { strokeDashoffset:0, duration:2.0, ease:'power2.out' });
+    tl.fromTo('.bud-stem', { strokeDashoffset:100 }, { strokeDashoffset:0, duration:1.2, stagger:0.2, ease:'power2.out' }, '-=1.3');
+    // leaves unfurl
+    tl.fromTo('.leaf', { scale:0 }, { scale:1, duration:0.7, stagger:0.2, ease:'back.out(1.7)' }, '-=1.1');
+    // glow swells
+    tl.to('.flower-glow', { opacity:0.55, duration:1.0, ease:'power1.out' }, '-=0.6');
+    // the bloom opens, ring by ring
+    tl.to('.petal-outer',   { scale:1, duration:0.9, stagger:0.06, ease:'back.out(1.6)' }, '-=0.4');
+    tl.to('.petal-mid',     { scale:1, duration:0.8, stagger:0.06, ease:'back.out(1.8)' }, '-=0.6');
+    tl.to('.petal-inner',   { scale:1, duration:0.7, stagger:0.07, ease:'back.out(2.0)' }, '-=0.5');
+    tl.to('.flower-center', { scale:1, duration:0.5, ease:'back.out(2.2)' }, '-=0.3');
+    // buds pop open
+    tl.to('.bud, .bud-center', { scale:1, duration:0.6, stagger:0.05, ease:'back.out(1.8)' }, '-=0.7');
+    tl.add(startAmbient, '-=0.2');
+    // the heart fades in and forms above the flower
+    tl.addLabel('heart');
+    tl.to(material, { opacity:state.heartOpacity, duration:1.6, ease:'power1.out' }, 'heart');
+    tl.to(state,    { form:1, duration:3.4, ease:'power2.inOut' }, 'heart');
+    // a soft line appears, then drifts away
+    tl.fromTo(whisperEl, { opacity:0, y:12 }, { opacity:1, y:0, duration:1.4, ease:'power2.out' }, 'heart+=0.8');
+    tl.to(whisperEl, { opacity:0, y:-14, duration:1.4, ease:'power1.in' }, 'heart+=3.8');
+    // linger on the moment, then move to the question
+    tl.add(finale, 'heart+=6.0');
+  }
+  document.getElementById('open-btn').addEventListener('click', beginSequence);
+
+  /* =================================================================
+     3) THE RUNAWAY "NO" BUTTON  (works on mouse AND touch)
+     ================================================================= */
+  const noBtn  = document.getElementById('no');
+  const yesBtn = document.getElementById('yes');
+  const lines = ['No','No?','Are you sure?','Really sure?','Think again 💭',
+                 "Don't do this to me",'You sure you sure?','Last chance…',
+                 'Pretty please? 🥺','My heart can\'t take this 💔'];
+  let dodges = 0, yesScale = 1, noScale = 1;
+
+  function dodge(){
+    if (!noBtn.classList.contains('loose')){
+      const r = noBtn.getBoundingClientRect();
+      noBtn.classList.add('loose');
+      noBtn.style.left = r.left + 'px';
+      noBtn.style.top  = r.top  + 'px';
+    }
+    dodges++;
+    noBtn.textContent = lines[Math.min(dodges, lines.length - 1)];
+
+    // make Yes more tempting and No smaller each time (floor so it never fully vanishes)
+    yesScale = Math.min(yesScale + 0.10, 2.2);
+    noScale  = Math.max(noScale  - 0.07, 0.55);
+    yesBtn.style.transform = `scale(${yesScale})`;
+    noBtn.style.transform  = `scale(${noScale})`;
+
+    const m = 16, w = noBtn.offsetWidth, h = noBtn.offsetHeight;
+    const x = m + Math.random() * (innerWidth  - w - m*2);
+    const y = m + Math.random() * (innerHeight - h - m*2);
+    noBtn.style.left = x + 'px';
+    noBtn.style.top  = y + 'px';
+  }
+  // pointerdown fires before click on both mouse and touch, so the tap never lands
+  noBtn.addEventListener('mouseenter', dodge);
+  noBtn.addEventListener('pointerdown', e => { e.preventDefault(); dodge(); });
+  noBtn.addEventListener('click', e => e.preventDefault());
+
+  /* =================================================================
+     4) SHE SAID YES  →  celebrate, then ask for the date
+     ================================================================= */
+  yesBtn.addEventListener('click', () => {
+    if (!reduceMotion){
+      gsap.fromTo(state, { bloom: 0 }, { bloom: 1, duration: 1.1, ease: 'power3.out',
+        onComplete: () => gsap.to(state, { bloom: 0, duration: 1.4, ease: 'power2.inOut' }) });
+    }
+    confetti();
+    document.getElementById('done-sub').textContent =
+      `You just made ${CONFIG.from === 'me' ? 'my' : CONFIG.from + "'s"} whole year. Now let's lock in the time.`;
+    setTimeout(() => show('done'), 650);
+  });
+
+  function confetti(){
+    const emojis = ['💖','💗','✨','💕','🌸','💘'];
+    for (let n = 0; n < 80; n++){
+      const el = document.createElement('div');
+      el.className = 'confetti';
+      el.textContent = emojis[(Math.random()*emojis.length)|0];
+      el.style.left = Math.random()*100 + 'vw';
+      el.style.fontSize = (14 + Math.random()*22) + 'px';
+      document.body.appendChild(el);
+      gsap.to(el, {
+        y: innerHeight + 60, x: '+=' + (Math.random()*160 - 80),
+        rotation: Math.random()*720 - 360, duration: 2.4 + Math.random()*2,
+        ease: 'power1.in', delay: Math.random()*0.5,
+        onComplete: () => el.remove()
+      });
+    }
+  }
+
+  /* =================================================================
+     5) DATE  →  GOOGLE CALENDAR  (+ universal .ics fallback)
+        Pure client side, so it runs fine on GitHub Pages.
+     ================================================================= */
+  const dateIn = document.getElementById('date');
+  const timeIn = document.getElementById('time');
+  const placeIn = document.getElementById('place');
+  const calBtn = document.getElementById('add-cal');
+  const icsLink = document.getElementById('ics-link');
+  const hint = document.getElementById('hint');
+
+  // default the date input to no earlier than today
+  dateIn.min = new Date().toISOString().split('T')[0];
+
+  const pad = n => String(n).padStart(2,'0');
+  const fmt = d => `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
+  const eventTitle = () => CONFIG.eventTitle || `Date with ${CONFIG.from === 'me' ? 'me' : CONFIG.from} 💖`;
+
+  function getDates(){
+    if (!dateIn.value || !timeIn.value) return null;
+    const start = new Date(`${dateIn.value}T${timeIn.value}`);
+    const end = new Date(start.getTime() + CONFIG.durationHours*3600*1000);
+    return { start, end };
+  }
+
+  function refresh(){
+    const d = getDates();
+    if (d){
+      calBtn.disabled = false;
+      hint.classList.remove('err');
+      hint.textContent = `${d.start.toLocaleString([], {weekday:'long', month:'long', day:'numeric', hour:'numeric', minute:'2-digit'})} — can't wait.`;
+      icsLink.hidden = false;
+      buildIcs(d);
+    } else {
+      calBtn.disabled = true;
+      icsLink.hidden = true;
+      hint.classList.remove('err');
+      hint.textContent = 'Pick a day and time to enable the button.';
+    }
+  }
+  dateIn.addEventListener('change', refresh);
+  timeIn.addEventListener('change', refresh);
+  placeIn.addEventListener('input', () => { const d = getDates(); if (d) buildIcs(d); });
+
+  calBtn.addEventListener('click', () => {
+    const d = getDates();
+    if (!d){ hint.classList.add('err'); hint.textContent = 'Choose a day and time first.'; return; }
+    const url = 'https://calendar.google.com/calendar/render?action=TEMPLATE'
+      + '&text='    + encodeURIComponent(eventTitle())
+      + '&dates='   + fmt(d.start) + '/' + fmt(d.end)
+      + '&details=' + encodeURIComponent('Made by ' + (CONFIG.from === 'me' ? 'someone who really likes you' : CONFIG.from) + ' 💕')
+      + (placeIn.value ? '&location=' + encodeURIComponent(placeIn.value) : '');
+    window.open(url, '_blank');
+  });
+
+  function buildIcs(d){
+    const stamp = new Date();
+    const z = x => fmt(x);   // floating local time, no Z = uses the calendar's own timezone
+    const ics = [
+      'BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//date-with-me//EN','BEGIN:VEVENT',
+      'UID:' + Date.now() + '@datewithme',
+      'DTSTAMP:' + stamp.getUTCFullYear()+pad(stamp.getUTCMonth()+1)+pad(stamp.getUTCDate())+'T'+pad(stamp.getUTCHours())+pad(stamp.getUTCMinutes())+'00Z',
+      'DTSTART:' + z(d.start), 'DTEND:' + z(d.end),
+      'SUMMARY:' + eventTitle(),
+      placeIn.value ? 'LOCATION:' + placeIn.value : '',
+      'DESCRIPTION:Made with love 💕',
+      'END:VEVENT','END:VCALENDAR'
+    ].filter(Boolean).join('\r\n');
+    const blob = new Blob([ics], { type:'text/calendar' });
+    icsLink.href = URL.createObjectURL(blob);
+    icsLink.download = 'our-date.ics';
+  }
+  </script>
+</body>
+</html>
