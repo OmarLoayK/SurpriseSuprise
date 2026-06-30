@@ -2,7 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#0a0710" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <title>A question for you</title>
 
 <!-- ============================================================= -->
@@ -37,6 +41,9 @@
     color:var(--ink);
     font-family:Inter, system-ui, -apple-system, sans-serif;
     overflow:hidden;
+    overscroll-behavior:none;
+    touch-action:manipulation;
+    -webkit-tap-highlight-color:transparent;
     -webkit-font-smoothing:antialiased;
     text-rendering:optimizeLegibility;
   }
@@ -50,7 +57,7 @@
   .stage{
     position:fixed; inset:0; z-index:2;
     display:flex; flex-direction:column; align-items:center; justify-content:flex-end;
-    padding: 0 24px clamp(40px, 9vh, 96px);
+    padding: 0 24px max(clamp(40px, 9dvh, 96px), env(safe-area-inset-bottom));
     text-align:center;
     opacity:0; transform:translateY(14px); pointer-events:none;
     transition:opacity .7s ease, transform .7s ease;
@@ -144,7 +151,7 @@
   /* the growing flower */
   .flower-wrap{
     position:fixed; left:50%; bottom:0; transform:translateX(-50%);
-    width:min(58vw,420px); height:min(78vh,600px); z-index:2;
+    width:min(72vw,420px); height:min(78dvh,600px); z-index:2;
     pointer-events:none; display:flex; align-items:flex-end; justify-content:center;
   }
   .flower{
@@ -174,8 +181,28 @@
   }
   .skip:hover{ color:var(--ink); }
 
+  /* music toggle */
+  .music-btn{
+    position:fixed; top:max(16px, env(safe-area-inset-top)); right:16px; z-index:7;
+    width:46px; height:46px; border-radius:50%; display:grid; place-items:center;
+    background:rgba(255,255,255,.07); border:1px solid var(--line); color:var(--ink);
+    cursor:pointer; backdrop-filter:blur(6px); -webkit-tap-highlight-color:transparent;
+    transition:border-color .2s ease, opacity .4s ease;
+  }
+  .music-btn:hover{ border-color:var(--rose-soft); }
+  .music-btn .slash{ opacity:0; transition:opacity .2s ease; }
+  .music-btn.muted .slash{ opacity:1; }
+  .music-btn.muted .wave{ opacity:0; }
+
+  /* tiny on-screen YouTube player: visible enough that phones won't pause it, invisible to the eye */
+  #yt-holder{ position:fixed; left:8px; bottom:8px; width:64px; height:36px; z-index:0;
+    opacity:0.012; pointer-events:none; overflow:hidden; border-radius:6px; }
+  #yt-holder iframe{ width:100%; height:100%; border:0; }
+
   @media (max-width:560px){
     .stage{ justify-content:center; }
+    .btn{ padding:18px 30px; font-size:1.08rem; }   /* bigger tap targets */
+    .ask-buttons{ gap:22px; }
   }
   @media (prefers-reduced-motion: reduce){
     .stage{ transition:opacity .3s ease; transform:none; }
@@ -186,6 +213,16 @@
 <body>
   <canvas id="bg-canvas"></canvas>
   <div class="vignette"></div>
+
+  <div id="yt-holder" aria-hidden="true"><div id="yt"></div></div>
+  <button class="music-btn" id="music-btn" aria-label="Turn music on or off" hidden>
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+         stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M11 5 6 9H2v6h4l5 4z"/>
+      <path class="wave" d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"/>
+      <line class="slash" x1="3" y1="3" x2="21" y2="21" stroke="#ff8da0"/>
+    </svg>
+  </button>
 
   <!-- the flower that grows from the bottom -->
   <div class="flower-wrap">
@@ -280,6 +317,8 @@
     question:      'Will you go out with me?',
     eventTitle:    '',          // leave '' to auto-build "Date with <from> 💖"
     durationHours: 2,
+    music:         'tamally-maak.mp3',   // (unused now — kept for reference)
+    youtubeId:     'EgmXTmj62ic',        // Tamally Maak (official). Paste any YouTube video id to change the song.
   };
 
   // personalize the visible copy
@@ -294,9 +333,10 @@
         the center — the same idea as the reel in your screenshot.
      ================================================================= */
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const isMobile = matchMedia('(max-width: 820px)').matches || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   const canvas = document.getElementById('bg-canvas');
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias:!isMobile, alpha:true, powerPreference:'high-performance' });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, isMobile ? 1.5 : 2));
   const scene  = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 1000);
   const group  = new THREE.Group();
@@ -308,7 +348,7 @@
     y: 13*Math.cos(t) - 5*Math.cos(2*t) - 2*Math.cos(3*t) - Math.cos(4*t)
   });
 
-  const STEPS = 1400, PER_STEP = 4;            // ~5600 particles
+  const STEPS = isMobile ? 850 : 1400, PER_STEP = isMobile ? 3 : 4;   // fewer particles on phones
   const COUNT = STEPS * PER_STEP;
   const positions = new Float32Array(COUNT * 3); // current (animated)
   const target    = new Float32Array(COUNT * 3); // final heart position
@@ -500,8 +540,52 @@
     show('ask');
   }
 
+  /* ---- background music via YouTube (licensed playback, no file to host) ---- */
+  const musicBtn = document.getElementById('music-btn');
+  let ytPlayer = null, ytReady = false, pendingPlay = false, musicOn = false;
+
+  // load the YouTube IFrame API up front so it's ready by the time she taps Begin
+  (function(){ const s = document.createElement('script'); s.src = 'https://www.youtube.com/iframe_api';
+    document.head.appendChild(s); })();
+
+  window.onYouTubeIframeAPIReady = function(){
+    ytPlayer = new YT.Player('yt', {
+      videoId: CONFIG.youtubeId,
+      playerVars: { autoplay:0, controls:0, disablekb:1, playsinline:1, rel:0,
+                    modestbranding:1, loop:1, playlist: CONFIG.youtubeId },
+      events: {
+        onReady: () => { ytReady = true; if (pendingPlay) startMusic(); },
+        onStateChange: (e) => {                       // hard-loop in case the loop param is ignored
+          if (e.data === YT.PlayerState.ENDED){ ytPlayer.seekTo(0); ytPlayer.playVideo(); }
+        }
+      }
+    });
+  };
+
+  function startMusic(){            // called inside the Begin tap so phones allow sound
+    musicBtn.hidden = false;
+    if (!ytReady){ pendingPlay = true; return; }      // not loaded yet — play as soon as it is
+    try {
+      ytPlayer.unMute();
+      ytPlayer.setVolume(0);
+      ytPlayer.playVideo();
+      const v = { x:0 };                              // gentle fade-in
+      gsap.to(v, { x:60, duration:3, ease:'power1.out', onUpdate:() => ytPlayer.setVolume(v.x) });
+      musicOn = true; musicBtn.classList.remove('muted');
+    } catch(e){}
+  }
+
+  musicBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!ytPlayer) return;
+    if (musicOn){ ytPlayer.mute(); musicOn = false; musicBtn.classList.add('muted'); }
+    else { ytPlayer.unMute(); ytPlayer.setVolume(60); ytPlayer.playVideo();
+           musicOn = true; musicBtn.classList.remove('muted'); }
+  });
+
   function beginSequence(){
     if (started) return; started = true;
+    startMusic();
     document.getElementById('intro').classList.remove('active');
     gsap.set(flowerEl, { autoAlpha:1 });
 
@@ -555,9 +639,12 @@
   const lines = ['No','No?','Are you sure?','Really sure?','Think again 💭',
                  "Don't do this to me",'You sure you sure?','Last chance…',
                  'Pretty please? 🥺','My heart can\'t take this 💔'];
-  let dodges = 0, yesScale = 1, noScale = 1;
+  let dodges = 0, yesScale = 1, noScale = 1, lastDodge = 0;
 
   function dodge(){
+    const now = performance.now();
+    if (now - lastDodge < 60) return;   // one tap shouldn't count twice
+    lastDodge = now;
     if (!noBtn.classList.contains('loose')){
       const r = noBtn.getBoundingClientRect();
       noBtn.classList.add('loose');
@@ -573,15 +660,21 @@
     yesBtn.style.transform = `scale(${yesScale})`;
     noBtn.style.transform  = `scale(${noScale})`;
 
-    const m = 16, w = noBtn.offsetWidth, h = noBtn.offsetHeight;
-    const x = m + Math.random() * (innerWidth  - w - m*2);
-    const y = m + Math.random() * (innerHeight - h - m*2);
+    if (navigator.vibrate) navigator.vibrate(14);   // little "nope!" buzz on Android phones
+
+    const vp = window.visualViewport;
+    const vw = (vp && vp.width)  || innerWidth;
+    const vh = (vp && vp.height) || innerHeight;
+    const m = 14, w = noBtn.offsetWidth, h = noBtn.offsetHeight;
+    const x = m + Math.random() * Math.max(0, vw - w - m*2);
+    const y = m + Math.random() * Math.max(0, vh - h - m*2);
     noBtn.style.left = x + 'px';
     noBtn.style.top  = y + 'px';
   }
   // pointerdown fires before click on both mouse and touch, so the tap never lands
   noBtn.addEventListener('mouseenter', dodge);
   noBtn.addEventListener('pointerdown', e => { e.preventDefault(); dodge(); });
+  noBtn.addEventListener('touchstart', e => { e.preventDefault(); dodge(); }, { passive:false });
   noBtn.addEventListener('click', e => e.preventDefault());
 
   /* =================================================================
