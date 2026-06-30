@@ -695,6 +695,7 @@
 
   function playLove(then){
     show('love');
+    swellMusic();                                   // the song begins with the words
     if (reduceMotion){ setTimeout(then, 2000); return; }
     confetti(28);                                   // a soft heart shower
     gsap.set('#love .ll', { opacity:0, y:28, rotateZ:-8, scale:0.7 });
@@ -705,29 +706,38 @@
     tl.to('#love .ll', { opacity:1, y:0, rotateZ:0, scale:1, duration:0.6, stagger:0.05, ease:'back.out(1.9)' });
   }
 
-  /* ---- background music (local file — reliable on phone, desktop, and Pages) ---- */
+  /* ---- background music: arm silently on the Begin tap, swell in when the words appear ---- */
   const bgm = document.getElementById('bgm');
   const musicBtn = document.getElementById('music-btn');
   bgm.src = CONFIG.music;
   bgm.loop = true;
-  let musicOn = false;
+  let musicOn = false, musicArmed = false;
   const MUSIC_VOL = 0.55;
 
-  function startMusic(){            // called inside the Begin tap so phones allow sound
-    musicBtn.hidden = false;
+  function armMusic(){             // inside the Begin tap: unlock + play, but silent (muted works on iPhone)
+    bgm.muted = true;
     bgm.volume = 0;
     const p = bgm.play();
-    if (p && p.catch) p.catch(() => { musicOn = false; musicBtn.classList.add('muted'); });
-    gsap.to(bgm, { volume: MUSIC_VOL, duration: 3, ease: 'power1.out' });
+    if (p && p.catch) p.catch(() => {});
+    musicArmed = true;
+  }
+  function swellMusic(){           // when the words start: restart from 0 and bring it in
+    try { bgm.currentTime = 0; } catch(e){}
+    bgm.muted = false;
+    const p = bgm.play();          // ensure it's going (in case the tap-unlock didn't take)
+    if (p && p.catch) p.catch(() => {});
+    musicBtn.hidden = false;
+    gsap.to(bgm, { volume: MUSIC_VOL, duration: 2.2, ease: 'power1.out' });  // fades on desktop; iPhone comes in at full
     musicOn = true; musicBtn.classList.remove('muted');
   }
   musicBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    if (musicOn){ bgm.pause(); musicOn = false; musicBtn.classList.add('muted'); }
+    if (musicOn){ bgm.muted = true; musicOn = false; musicBtn.classList.add('muted'); }
     else {
+      bgm.muted = false;
       const p = bgm.play();
       if (p && p.catch) p.catch(() => {});
-      gsap.to(bgm, { volume: MUSIC_VOL, duration: 0.6 });
+      gsap.to(bgm, { volume: MUSIC_VOL, duration: 0.5 });
       musicOn = true; musicBtn.classList.remove('muted');
     }
   });
@@ -735,7 +745,7 @@
   function beginSequence(){
     if (started) return; started = true;
     if (introHeartsTimer) clearInterval(introHeartsTimer);
-    startMusic();
+    armMusic();
     document.getElementById('intro').classList.remove('active');
     gsap.set(flowerEl, { autoAlpha:1 });
 
