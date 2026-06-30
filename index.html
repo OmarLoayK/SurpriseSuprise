@@ -104,7 +104,7 @@
 
   .ask-buttons{ display:flex; gap:18px; align-items:center; flex-wrap:wrap; justify-content:center; }
   /* the No button roams the whole screen once it starts dodging */
-  #no.loose{ position:fixed; z-index:5; margin:0; }
+  .btn-no.loose{ position:fixed; z-index:5; margin:0; }
 
   /* date / yes stage */
   .panel{
@@ -147,6 +147,21 @@
 
   /* confetti pieces */
   .confetti{ position:fixed; top:-20px; z-index:4; pointer-events:none; will-change:transform; font-size:20px; }
+
+  /* ambient floating hearts (intro) and falling petals (flower) */
+  .float-layer{ position:fixed; inset:0; z-index:1; pointer-events:none; overflow:hidden; }
+  .float-heart{ position:fixed; bottom:-30px; color:var(--rose-soft); opacity:0;
+    will-change:transform; text-shadow:0 0 14px rgba(255,93,143,.5); }
+  .fall-petal{ position:fixed; top:0; left:0; z-index:2; pointer-events:none; opacity:0; will-change:transform; }
+
+  /* the "I love you forever" line */
+  .love-line{
+    font-family:Fraunces, Georgia, serif; font-weight:600;
+    font-size:clamp(2rem, 8vw, 4.4rem); line-height:1.1; letter-spacing:-.01em;
+    text-shadow:0 6px 50px rgba(255,93,143,.5);
+  }
+  .love-line .ll{ display:inline-block; white-space:pre; }
+  .love-line .ll.heart{ color:#ff3b6b; text-shadow:0 0 26px rgba(255,59,107,.8); }
 
   /* the growing flower */
   .flower-wrap{
@@ -194,11 +209,6 @@
   .music-btn.muted .slash{ opacity:1; }
   .music-btn.muted .wave{ opacity:0; }
 
-  /* tiny on-screen YouTube player: visible enough that phones won't pause it, invisible to the eye */
-  #yt-holder{ position:fixed; left:8px; bottom:8px; width:64px; height:36px; z-index:0;
-    opacity:0.012; pointer-events:none; overflow:hidden; border-radius:6px; }
-  #yt-holder iframe{ width:100%; height:100%; border:0; }
-
   @media (max-width:560px){
     .stage{ justify-content:center; }
     .btn{ padding:18px 30px; font-size:1.08rem; }   /* bigger tap targets */
@@ -213,8 +223,9 @@
 <body>
   <canvas id="bg-canvas"></canvas>
   <div class="vignette"></div>
+  <div class="float-layer" id="float-layer"></div>
 
-  <div id="yt-holder" aria-hidden="true"><div id="yt"></div></div>
+  <audio id="bgm" loop preload="auto" playsinline></audio>
   <button class="music-btn" id="music-btn" aria-label="Turn music on or off" hidden>
     <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
          stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -276,6 +287,21 @@
     </div>
   </section>
 
+  <!-- STAGE 2b — the love line -->
+  <section class="stage" id="love">
+    <h1 class="love-line" id="love-line"></h1>
+  </section>
+
+  <!-- STAGE 2c — the second question -->
+  <section class="stage" id="ask2">
+    <p class="eyebrow" style="color:var(--gold)">One more thing…</p>
+    <h1 id="question2">And will you be mine, forever?</h1>
+    <div class="ask-buttons">
+      <button class="btn btn-yes" id="yes2">Yes 💍</button>
+      <button class="btn btn-no" id="no2">No</button>
+    </div>
+  </section>
+
   <!-- STAGE 3 — she said yes -->
   <section class="stage" id="done">
     <p class="eyebrow" style="color:var(--gold)">It's a date</p>
@@ -312,13 +338,14 @@
      ================================================================= */
   const params = new URLSearchParams(location.search);
   const CONFIG = {
-    to:            params.get('to')   || 'you',        // her name
-    from:          params.get('from') || 'me',         // your name
+    to:            params.get('to')   || 'Anna',      // her name
+    from:          params.get('from') || 'me',        // your name
     question:      'Will you go out with me?',
+    question2:     'And will you be mine, forever?',
+    loveLine:      'I love you forever \u2764',
     eventTitle:    '',          // leave '' to auto-build "Date with <from> 💖"
     durationHours: 2,
-    music:         'tamally-maak.mp3',   // (unused now — kept for reference)
-    youtubeId:     'EgmXTmj62ic',        // Tamally Maak (official). Paste any YouTube video id to change the song.
+    music:         'tamally-maak.mp3',   // put an audio file with this exact name next to index.html
   };
 
   // personalize the visible copy
@@ -513,19 +540,38 @@
     }
   }
 
-  let ambientTimer = null, glowTween = null, swayTween = null;
+  // a petal drifting down past the bloom
+  function fallPetal(){
+    const el = document.createElement('div');
+    el.className = 'fall-petal';
+    el.textContent = Math.random() < 0.5 ? '🌸' : '🌷';
+    el.style.left = (40 + Math.random()*20) + 'vw';
+    el.style.top  = (innerHeight*0.22) + 'px';
+    el.style.fontSize = (12 + Math.random()*14) + 'px';
+    document.body.appendChild(el);
+    gsap.to(el, { opacity:0.9, duration:0.5 });
+    gsap.to(el, { y: innerHeight*0.6 + Math.random()*innerHeight*0.3,
+                  x: (Math.random()*140 - 70), rotation: Math.random()*420 - 210,
+                  duration: 4.5 + Math.random()*2.5, ease:'power1.in', onComplete:()=>el.remove() });
+    gsap.to(el, { opacity:0, duration:1.6, delay:3.2 });
+  }
+
+  let ambientTimer = null, petalTimer = null, glowTween = null, swayTween = null, introHeartsTimer = null;
   function startAmbient(){
-    sparkle(10);
-    ambientTimer = setInterval(() => sparkle(5), 850);
-    glowTween = gsap.to('.flower-glow', { opacity:0.85, duration:2.6, ease:'sine.inOut', yoyo:true, repeat:-1 });
-    swayTween = gsap.to(flowerEl, { rotation:2.2, duration:3.6, ease:'sine.inOut',
+    const spark = isMobile ? 8 : 14;
+    sparkle(spark + 4);
+    ambientTimer = setInterval(() => sparkle(spark), 800);
+    petalTimer   = setInterval(fallPetal, isMobile ? 1500 : 1000);
+    glowTween = gsap.to('.flower-glow', { opacity:0.9, duration:2.4, ease:'sine.inOut', yoyo:true, repeat:-1 });
+    swayTween = gsap.to(flowerEl, { rotation:2.6, duration:3.4, ease:'sine.inOut',
                                     yoyo:true, repeat:-1, transformOrigin:'50% 100%' });
   }
 
   let started = false, finished = false;
-  function finale(){                       // settle into the question (also the skip target)
+  function finale(){                       // settle, show the love line, then the question
     if (finished) return; finished = true;
     if (ambientTimer) clearInterval(ambientTimer);
+    if (petalTimer) clearInterval(petalTimer);
     if (glowTween) glowTween.kill();
     gsap.to(skipEl, { autoAlpha:0, duration:0.3 });
     gsap.set('.stem, .bud-stem', { strokeDashoffset:0 });
@@ -537,54 +583,62 @@
     gsap.to(flowerEl, { scale:0.6, yPercent:14, opacity:0.5, transformOrigin:'50% 100%',
                         duration:1.3, ease:'power2.inOut' });
     gsap.to('.flower-glow', { opacity:0.28, duration:1.3 });
-    show('ask');
+    playLove(() => show('ask'));
   }
 
-  /* ---- background music via YouTube (licensed playback, no file to host) ---- */
+  /* ---- the "I love you forever ❤" moment ---- */
+  const loveEl = document.getElementById('love-line');
+  (function buildLove(){
+    for (const ch of CONFIG.loveLine){
+      const s = document.createElement('span');
+      s.className = 'll' + (ch === '\u2764' ? ' heart' : '');
+      s.textContent = (ch === ' ') ? '\u00A0' : ch;
+      loveEl.appendChild(s);
+    }
+  })();
+
+  function playLove(then){
+    show('love');
+    if (reduceMotion){ setTimeout(then, 2000); return; }
+    confetti(28);                                   // a soft heart shower
+    gsap.set('#love .ll', { opacity:0, y:28, rotateZ:-8, scale:0.7 });
+    const tl = gsap.timeline({ onComplete(){
+      gsap.to('#love .ll.heart', { scale:1.25, duration:0.5, yoyo:true, repeat:3, ease:'sine.inOut' });
+      setTimeout(() => gsap.to(loveEl, { opacity:0, y:-22, duration:0.9, ease:'power1.in', onComplete:then }), 2600);
+    }});
+    tl.to('#love .ll', { opacity:1, y:0, rotateZ:0, scale:1, duration:0.6, stagger:0.05, ease:'back.out(1.9)' });
+  }
+
+  /* ---- background music (local file — reliable on phone, desktop, and Pages) ---- */
+  const bgm = document.getElementById('bgm');
   const musicBtn = document.getElementById('music-btn');
-  let ytPlayer = null, ytReady = false, pendingPlay = false, musicOn = false;
-
-  // load the YouTube IFrame API up front so it's ready by the time she taps Begin
-  (function(){ const s = document.createElement('script'); s.src = 'https://www.youtube.com/iframe_api';
-    document.head.appendChild(s); })();
-
-  window.onYouTubeIframeAPIReady = function(){
-    ytPlayer = new YT.Player('yt', {
-      videoId: CONFIG.youtubeId,
-      playerVars: { autoplay:0, controls:0, disablekb:1, playsinline:1, rel:0,
-                    modestbranding:1, loop:1, playlist: CONFIG.youtubeId },
-      events: {
-        onReady: () => { ytReady = true; if (pendingPlay) startMusic(); },
-        onStateChange: (e) => {                       // hard-loop in case the loop param is ignored
-          if (e.data === YT.PlayerState.ENDED){ ytPlayer.seekTo(0); ytPlayer.playVideo(); }
-        }
-      }
-    });
-  };
+  bgm.src = CONFIG.music;
+  bgm.loop = true;
+  let musicOn = false;
+  const MUSIC_VOL = 0.55;
 
   function startMusic(){            // called inside the Begin tap so phones allow sound
     musicBtn.hidden = false;
-    if (!ytReady){ pendingPlay = true; return; }      // not loaded yet — play as soon as it is
-    try {
-      ytPlayer.unMute();
-      ytPlayer.setVolume(0);
-      ytPlayer.playVideo();
-      const v = { x:0 };                              // gentle fade-in
-      gsap.to(v, { x:60, duration:3, ease:'power1.out', onUpdate:() => ytPlayer.setVolume(v.x) });
-      musicOn = true; musicBtn.classList.remove('muted');
-    } catch(e){}
+    bgm.volume = 0;
+    const p = bgm.play();
+    if (p && p.catch) p.catch(() => { musicOn = false; musicBtn.classList.add('muted'); });
+    gsap.to(bgm, { volume: MUSIC_VOL, duration: 3, ease: 'power1.out' });
+    musicOn = true; musicBtn.classList.remove('muted');
   }
-
   musicBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    if (!ytPlayer) return;
-    if (musicOn){ ytPlayer.mute(); musicOn = false; musicBtn.classList.add('muted'); }
-    else { ytPlayer.unMute(); ytPlayer.setVolume(60); ytPlayer.playVideo();
-           musicOn = true; musicBtn.classList.remove('muted'); }
+    if (musicOn){ bgm.pause(); musicOn = false; musicBtn.classList.add('muted'); }
+    else {
+      const p = bgm.play();
+      if (p && p.catch) p.catch(() => {});
+      gsap.to(bgm, { volume: MUSIC_VOL, duration: 0.6 });
+      musicOn = true; musicBtn.classList.remove('muted');
+    }
   });
 
   function beginSequence(){
     if (started) return; started = true;
+    if (introHeartsTimer) clearInterval(introHeartsTimer);
     startMusic();
     document.getElementById('intro').classList.remove('active');
     gsap.set(flowerEl, { autoAlpha:1 });
@@ -594,7 +648,7 @@
       gsap.set('.leaf, .petal, .flower-center, .bud, .bud-center', { scale:1 });
       gsap.set('.flower-glow', { opacity:0.45 });
       material.opacity = state.heartOpacity; state.form = 1;
-      setTimeout(() => show('ask'), 600);
+      setTimeout(() => playLove(() => show('ask')), 600);
       return;
     }
 
@@ -618,7 +672,10 @@
     tl.to('.flower-center', { scale:1, duration:0.5, ease:'back.out(2.2)' }, '-=0.3');
     // buds pop open
     tl.to('.bud, .bud-center', { scale:1, duration:0.6, stagger:0.05, ease:'back.out(1.8)' }, '-=0.7');
-    tl.add(startAmbient, '-=0.2');
+    // a happy little bounce of the whole bloom
+    tl.to(flowerEl, { scale:1.06, duration:0.22, ease:'power2.out', transformOrigin:'50% 100%' }, '-=0.15');
+    tl.to(flowerEl, { scale:1, duration:0.7, ease:'elastic.out(1,0.5)', transformOrigin:'50% 100%' });
+    tl.add(startAmbient, '-=0.5');
     // the heart fades in and forms above the flower
     tl.addLabel('heart');
     tl.to(material, { opacity:state.heartOpacity, duration:1.6, ease:'power1.out' }, 'heart');
@@ -631,69 +688,98 @@
   }
   document.getElementById('open-btn').addEventListener('click', beginSequence);
 
-  /* =================================================================
-     3) THE RUNAWAY "NO" BUTTON  (works on mouse AND touch)
-     ================================================================= */
-  const noBtn  = document.getElementById('no');
-  const yesBtn = document.getElementById('yes');
-  const lines = ['No','No?','Are you sure?','Really sure?','Think again 💭',
-                 "Don't do this to me",'You sure you sure?','Last chance…',
-                 'Pretty please? 🥺','My heart can\'t take this 💔'];
-  let dodges = 0, yesScale = 1, noScale = 1, lastDodge = 0;
+  /* ---- intro: entrance + drifting hearts + a gently breathing button ---- */
+  if (!reduceMotion){
+    gsap.from('#intro .eyebrow, #intro h1, #intro .sub, #intro .btn-yes',
+      { opacity:0, y:24, duration:0.9, stagger:0.14, ease:'power2.out', delay:0.25 });
+    gsap.to('#open-btn', { scale:1.045, duration:1.3, ease:'sine.inOut', yoyo:true, repeat:-1, delay:1.4 });
 
-  function dodge(){
-    const now = performance.now();
-    if (now - lastDodge < 60) return;   // one tap shouldn't count twice
-    lastDodge = now;
-    if (!noBtn.classList.contains('loose')){
-      const r = noBtn.getBoundingClientRect();
-      noBtn.classList.add('loose');
-      noBtn.style.left = r.left + 'px';
-      noBtn.style.top  = r.top  + 'px';
+    const floatLayer = document.getElementById('float-layer');
+    function spawnHeart(){
+      const el = document.createElement('div');
+      el.className = 'float-heart';
+      el.textContent = Math.random() < 0.6 ? '♥' : '❀';
+      el.style.left = (Math.random()*100) + 'vw';
+      el.style.fontSize = (10 + Math.random()*20) + 'px';
+      floatLayer.appendChild(el);
+      gsap.to(el, { opacity:0.5, duration:1.2 });
+      gsap.to(el, { y: -(innerHeight + 80), duration: 8 + Math.random()*6, ease:'none', onComplete:()=>el.remove() });
+      gsap.to(el, { x: '+=' + (Math.random()*60 - 30), duration: 5, ease:'sine.inOut', yoyo:true, repeat:-1 });
+      gsap.to(el, { opacity:0, duration:2.5, delay: 5 + Math.random()*3 });
     }
-    dodges++;
-    noBtn.textContent = lines[Math.min(dodges, lines.length - 1)];
-
-    // make Yes more tempting and No smaller each time (floor so it never fully vanishes)
-    yesScale = Math.min(yesScale + 0.10, 2.2);
-    noScale  = Math.max(noScale  - 0.07, 0.55);
-    yesBtn.style.transform = `scale(${yesScale})`;
-    noBtn.style.transform  = `scale(${noScale})`;
-
-    if (navigator.vibrate) navigator.vibrate(14);   // little "nope!" buzz on Android phones
-
-    const vp = window.visualViewport;
-    const vw = (vp && vp.width)  || innerWidth;
-    const vh = (vp && vp.height) || innerHeight;
-    const m = 14, w = noBtn.offsetWidth, h = noBtn.offsetHeight;
-    const x = m + Math.random() * Math.max(0, vw - w - m*2);
-    const y = m + Math.random() * Math.max(0, vh - h - m*2);
-    noBtn.style.left = x + 'px';
-    noBtn.style.top  = y + 'px';
+    for (let i = 0; i < 6; i++) setTimeout(spawnHeart, i*250);
+    introHeartsTimer = setInterval(spawnHeart, 650);
   }
-  // pointerdown fires before click on both mouse and touch, so the tap never lands
-  noBtn.addEventListener('mouseenter', dodge);
-  noBtn.addEventListener('pointerdown', e => { e.preventDefault(); dodge(); });
-  noBtn.addEventListener('touchstart', e => { e.preventDefault(); dodge(); }, { passive:false });
-  noBtn.addEventListener('click', e => e.preventDefault());
 
   /* =================================================================
-     4) SHE SAID YES  →  celebrate, then ask for the date
+     3) THE TWO QUESTIONS  (each with a runaway "No" — mouse + touch)
      ================================================================= */
-  yesBtn.addEventListener('click', () => {
-    if (!reduceMotion){
-      gsap.fromTo(state, { bloom: 0 }, { bloom: 1, duration: 1.1, ease: 'power3.out',
-        onComplete: () => gsap.to(state, { bloom: 0, duration: 1.4, ease: 'power2.inOut' }) });
+  document.getElementById('question2').textContent = CONFIG.question2;
+
+  function setupQuestion(noEl, yesEl, lines, onYes){
+    let dodges = 0, yesScale = 1, noScale = 1, lastDodge = 0;
+    function dodge(){
+      const now = performance.now();
+      if (now - lastDodge < 60) return;   // one tap shouldn't count twice
+      lastDodge = now;
+      if (!noEl.classList.contains('loose')){
+        const r = noEl.getBoundingClientRect();
+        noEl.classList.add('loose');
+        noEl.style.left = r.left + 'px';
+        noEl.style.top  = r.top  + 'px';
+      }
+      dodges++;
+      noEl.textContent = lines[Math.min(dodges, lines.length - 1)];
+      yesScale = Math.min(yesScale + 0.10, 2.2);
+      noScale  = Math.max(noScale  - 0.07, 0.55);
+      yesEl.style.transform = `scale(${yesScale})`;
+      noEl.style.transform  = `scale(${noScale})`;
+      if (navigator.vibrate) navigator.vibrate(14);   // "nope!" buzz on Android
+      const vp = window.visualViewport;
+      const vw = (vp && vp.width)  || innerWidth;
+      const vh = (vp && vp.height) || innerHeight;
+      const m = 14, w = noEl.offsetWidth, h = noEl.offsetHeight;
+      noEl.style.left = (m + Math.random() * Math.max(0, vw - w - m*2)) + 'px';
+      noEl.style.top  = (m + Math.random() * Math.max(0, vh - h - m*2)) + 'px';
     }
-    confetti();
-    document.getElementById('done-sub').textContent =
-      `You just made ${CONFIG.from === 'me' ? 'my' : CONFIG.from + "'s"} whole year. Now let's lock in the time.`;
-    setTimeout(() => show('done'), 650);
+    noEl.addEventListener('mouseenter', dodge);
+    noEl.addEventListener('pointerdown', e => { e.preventDefault(); dodge(); });
+    noEl.addEventListener('touchstart', e => { e.preventDefault(); dodge(); }, { passive:false });
+    noEl.addEventListener('click', e => e.preventDefault());
+    yesEl.addEventListener('click', onYes);
+  }
+
+  const lines1 = ['No','No?','Are you sure?','Really sure?','Think again 💭',
+                  "Don't do this to me",'You sure you sure?','Last chance…',
+                  'Pretty please? 🥺','My heart can\'t take this 💔'];
+  const lines2 = ['No','Nooo','You can\'t resist 😤','Reconsider 🥺','Forever sounds nice…',
+                  'Just say yes 💗','Resistance is futile 😌','Okay, last one…','Pleaaase 🫶'];
+
+  // Q1 — Will you go out with me?  →  Q2
+  setupQuestion(document.getElementById('no'), document.getElementById('yes'), lines1, () => {
+    if (!reduceMotion){
+      gsap.fromTo(state, { bloom:0 }, { bloom:0.6, duration:0.7, ease:'power3.out',
+        onComplete:() => gsap.to(state, { bloom:0, duration:1.0, ease:'power2.inOut' }) });
+    }
+    confetti(30);
+    setTimeout(() => show('ask2'), 520);
   });
 
-  function confetti(){
+  // Q2 — And will you be mine, forever?  →  the date
+  setupQuestion(document.getElementById('no2'), document.getElementById('yes2'), lines2, () => {
+    if (!reduceMotion){
+      gsap.fromTo(state, { bloom:0 }, { bloom:1, duration:1.1, ease:'power3.out',
+        onComplete:() => gsap.to(state, { bloom:0, duration:1.4, ease:'power2.inOut' }) });
+    }
+    confetti(90);
+    document.getElementById('done-sub').textContent =
+      `You just made ${CONFIG.from === 'me' ? 'my' : CONFIG.from + "'s"} whole year. Now let's lock in the time.`;
+    setTimeout(() => show('done'), 700);
+  });
+
+  function confetti(count){
     const emojis = ['💖','💗','✨','💕','🌸','💘'];
-    for (let n = 0; n < 80; n++){
+    for (let n = 0; n < (count || 80); n++){
       const el = document.createElement('div');
       el.className = 'confetti';
       el.textContent = emojis[(Math.random()*emojis.length)|0];
